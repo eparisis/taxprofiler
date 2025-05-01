@@ -23,6 +23,7 @@ include { GANON_REPORT                                  } from '../../modules/nf
 include { SYLPH_PROFILE                                 } from '../../modules/nf-core/sylph/profile/main'
 include { SYLPHTAX_TAXPROF                              } from '../../modules/nf-core/sylphtax/taxprof/main'
 
+include { MELON                                         } from '../../modules/nf-core/melon/main'
 
 
 // Custom Functions
@@ -104,6 +105,7 @@ workflow PROFILING {
             kmcp:       db_meta.tool == 'kmcp'
             ganon:      db_meta.tool == 'ganon'
             sylph:      db_meta.tool == 'sylph'
+            melon:      db_meta.tool == 'melon'
             unknown:    true
         }
 
@@ -647,6 +649,27 @@ workflow PROFILING {
         SYLPHTAX_TAXPROF (ch_input_for_sylphtax.report, file(params.sylph_taxonomy, checkExists: true) )
         ch_versions = ch_versions.mix( SYLPHTAX_TAXPROF.out.versions.first() )
         ch_raw_profiles = ch_raw_profiles.mix( SYLPHTAX_TAXPROF.out.taxprof_output )
+
+    }
+
+    if ( params.run_melon ) {
+
+        ch_input_for_melon = ch_input_for_profiling.melon
+                                .filter {
+                                    meta, reads, meta_db, db ->
+                                        if ( !meta['type'] == 'long' ) log.warn "[nf-core/taxprofiler] melon is only suitable for long-read metagenomic profiling. Skipping melon for sample ${meta.id}."
+                                        meta_db['tool'] == 'melon' && meta['type'] == 'long'
+                                }
+                                .multiMap {
+                                    it ->
+                                        reads: [ it[0] + it[2], it[1] ]
+                                        db: it[3]
+                                }
+
+        MELON( ch_input_for_melon.reads, ch_input_for_melon.db, [] )
+        ch_versions             = ch_versions.mix( MELON.out.versions.first() )
+        ch_raw_classifications  = ch_raw_classifications.mix( MELON.out.json_output )
+        ch_raw_profiles         = ch_raw_profiles.mix( MELON.out.tsv_output )
 
     }
 
